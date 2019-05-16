@@ -1,0 +1,112 @@
+#define CONN_SETUP 0
+#define SLIDING_WINDOW 1
+#define CONN_TEARDOWN 2
+
+#define INIT 0
+#define SET_CHECKSUM 1
+#define WAIT_SYN_ACK 2
+#define READ_CHECKSUM 3
+#define EST_CONN 4
+#define WAIT_FIN_ACK 5
+#define WAIT_FIN 6
+#define WAIT 7
+#define CLOSED 8
+#define WINDOW_NOT_FULL 9
+#define CHECK_WINDOW_SIZE 10
+#define WINDOW_FULL 11
+#define READ_SEQ_NUMBER 12
+#define READ_BUFFER 13
+
+
+int main(int argc, char *argv[]) {
+
+int senderState;
+int machineState;
+
+  while(1){
+
+    switch (senderState){
+    
+	case CONN_SETUP:
+          switch (machineState){
+
+		case INIT:
+		  break;
+
+		case SET_CHECKSUM:
+		  break;
+
+		case WAIT_SYN_ACK:
+		  break;
+
+		case READ_CHECKSUM:
+		  break;
+
+		case EST_CONN:
+		  senderState = 1;
+		  break;
+
+		default:
+		  break;
+          }
+      	  break;
+
+	case SLIDING_WINDOW:
+	  switch (machineState){
+
+		case WINDOW_NOT_FULL:
+		  break;
+
+		case WINDOW_FULL:
+		  break;
+
+		case SET_CHECKSUM:
+		  break;
+
+		case CHECK_WINDOW_SIZE:
+		  break;
+
+		case READ_CHECKSUM:
+		  break;
+
+		case READ_SEQ_NUMBER:
+		  break;
+
+		case READ_BUFFER:
+		  break;
+	  }
+          break;
+
+	case CONN_TEARDOWN:
+	  switch (machineState){
+
+		case INIT:
+		  break;
+
+		case SET_CHECKSUM:
+		  break;
+
+		case WAIT_FIN_ACK:
+		  break;
+
+		case READ_CHECKSUM:
+		  break;
+
+		case WAIT_FIN:
+		  senderState = 1;
+		  break;
+
+		case WAIT:
+		  break;
+
+		case CLOSED:
+		  break;
+
+		default:
+		  break;
+	  }
+	  break;
+    }
+  }
+
+}
