@@ -69,24 +69,29 @@ void initSocketAddress(struct sockaddr_in *name, char *hostName, unsigned short 
  * Writes the string message to the file (socket)
  * denoted by fileDescriptor.
  */
-void writeMessage(int fileDescriptor, char *message, sockaddr serverName) {
+void writeMessage(int fileDescriptor, char *message, struct sockaddr_in serverName) {
   int nOfBytes;
 
   //nOfBytes = write(fileDescriptor, message, strlen(message) + 1);
-  nOfBytes = sendto(fileDescriptor, message, strlen(message)+ 1,0, &serverName, sizeof(struct sockaddr));
+  nOfBytes = sendto(fileDescriptor, message, strlen(message)+ 1,0,(struct sockaddr*) &serverName, sizeof(struct sockaddr));
   if(nOfBytes < 0) {
     perror("writeMessage - Could not write data\n");
     exit(EXIT_FAILURE);
   }
 
 }
+typedef struct threadArgument{
+  int fileDescriptor;
+  struct sockaddr_in server;
+}argument;
 /*readInput
  * function that is used by thread which checks if there has
  * come in some input from user if so sends it to function writeMessage
  * */
 
-void* readInput (void* fileDescriptor){
+void* readInput (void* input){
   char messageString[messageLength];
+  argument* input2 = (argument*) input;
   printf("\nType something and press [RETURN] to send it to the server.\n");
   printf("Type 'quit' to nuke this program.\n");
   fflush(stdin);
@@ -96,11 +101,11 @@ void* readInput (void* fileDescriptor){
     messageString[messageLength - 1] = '\0';
     if(strncmp(messageString,"quit\n",messageLength) != 0){
 
-      //writeMessage((int) fileDescriptor, messageString, );
+      writeMessage(input2->fileDescriptor, messageString,input2->server );
 
     }
     else {
-      close((int)fileDescriptor);
+      close(input2->fileDescriptor);
       exit(EXIT_SUCCESS);
     }
   }
@@ -148,6 +153,8 @@ typedef struct rtp_struct{
   char *data;
 }rtp;
 
+
+
 int main(int argc, char *argv[]) {
   int sock;
   struct sockaddr_in serverName;
@@ -159,6 +166,7 @@ int main(int argc, char *argv[]) {
   int senderState;
   int machineState;
   rtp send_buffer;
+  argument input;
 
 
 
@@ -269,15 +277,18 @@ int main(int argc, char *argv[]) {
   }
   else{
 
+    input.fileDescriptor = sock;
+    input.server = serverName;
+
 
     /*Create thread that will check incoming messages from server and print them on screen*/
-    //test1 = pthread_create(&readFromServer, NULL,readServerMessage, (void*)(size_t) sock);
-    //if(test1 != 0)
-      //printf("%d : %s\n",errno,strerror(errno));
+    test1 = pthread_create(&readFromServer, NULL,readServerMessage, (void*) &input);
+    if(test1 != 0)
+      printf("%d : %s\n",errno,strerror(errno));
     /*Create thread that will wait for input from user and will send it further to server*/
-    //test2 = pthread_create(&writeToServer,NULL,readInput,(void*)(size_t) sock);
-    //if(test2 != 0)
-      //printf("%d : %s\n", errno,strerror(errno));
+    test2 = pthread_create(&writeToServer,NULL,readInput,(void*)(size_t) sock);
+    if(test2 != 0)
+      printf("%d : %s\n", errno,strerror(errno));
   }
   //pthread_join(writeToServer, NULL);
   //pthread_join(readFromServer, NULL);
