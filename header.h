@@ -47,12 +47,16 @@ typedef struct threadArgument{
   struct sockaddr_in server;
 }argument;
 
-typedef struct rtp_struct{
+struct header{
   int flags;
   int id;
   int seq;
   int windowsize;
   int crc;
+};
+
+typedef struct rtp_struct{
+  struct header head;
   char *data;
 }rtp;
 
@@ -62,6 +66,9 @@ int readMessageFrom(int fileDescriptor);
 void* readInput (void* input);
 void* readServerMessage (void* fileDescriptor);
 int makeSocket(unsigned short int port);
+char* serialize_UDP( rtp udp);
+rtp deserialize_UDP(char* buffer);
+
 
 
 #endif

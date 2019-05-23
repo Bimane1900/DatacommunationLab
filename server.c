@@ -19,8 +19,8 @@ int main(int argc, char *argv[]) {
 
   /*Listen for messages and reply*/
   while(1){
-    if(readMessageFrom(sock))
-      writeMessage(sock,"I hear you...",clientName);
+    readMessageFrom(sock);
+      //writeMessage(sock,"I hear you...",clientName);
   }
 
 }
