@@ -20,7 +20,7 @@ int main(int argc, char *argv[]) {
 
 
 
-  while(1){
+  /*while(1){
 
     switch (senderState){
     case CONN_SETUP:
@@ -99,47 +99,57 @@ int main(int argc, char *argv[]) {
 
 
     }
-  }
+  }*/
 
 
 
   /* Check arguments */
-  if(argv[1] == NULL) {
+  /*if(argv[1] == NULL) {
     perror("Usage: client [host name]\n");
     exit(EXIT_FAILURE);
   }
   else {
     strncpy(hostName, argv[1], hostNameLength);
     hostName[hostNameLength - 1] = '\0';
-  }
-  /* Create the socket */
-  sock = socket(PF_INET, SOCK_DGRAM, 0);
+  }*/
+
+  /*hardcoded IP for easy testing*/
+  strncpy(hostName, "127.0.0.1",hostNameLength);
+
+  /* Create the socket, client need to listen to another port
+   * because it is on same machine I think, else server will
+      pick up its own messages */
+  sock = makeSocket(PORT+1);
+
+  /*sock = socket(PF_INET, SOCK_DGRAM, 0);
   if(sock < 0) {
     perror("Could not create a socket\n");
     exit(EXIT_FAILURE);
-  }
+  }*/
+
   /* Initialize the socket address */
   initSocketAddress(&serverName, hostName, PORT);
+
   /* Connect to the server */
-  if(connect(sock, (struct sockaddr *)&serverName, sizeof(serverName)) < 0) {
+  /*if(connect(sock, (struct sockaddr *)&serverName, sizeof(serverName)) < 0) {
     perror("Could not connect to server\n");
     exit(EXIT_FAILURE);
   }
-  else{
+  else{*/
 
     input.fileDescriptor = sock;
     input.server = serverName;
 
 
     /*Create thread that will check incoming messages from server and print them on screen*/
-    test1 = pthread_create(&readFromServer, NULL,readServerMessage, (void*) &input);
+    test1 = pthread_create(&readFromServer, NULL,readServerMessage, (void*) &sock);
     if(test1 != 0)
       printf("%d : %s\n",errno,strerror(errno));
     /*Create thread that will wait for input from user and will send it further to server*/
-    test2 = pthread_create(&writeToServer,NULL,readInput,(void*)(size_t) sock);
+    test2 = pthread_create(&writeToServer,NULL,readInput,(void*)&input);
     if(test2 != 0)
       printf("%d : %s\n", errno,strerror(errno));
-  }
+  //}
   pthread_join(writeToServer, NULL);
   pthread_join(readFromServer, NULL);
 }

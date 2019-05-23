@@ -61,5 +61,7 @@ void writeMessage(int fileDescriptor, char *message, struct sockaddr_in serverNa
 int readMessageFrom(int fileDescriptor);
 void* readInput (void* input);
 void* readServerMessage (void* fileDescriptor);
+int makeSocket(unsigned short int port);
+
 
 #endif
