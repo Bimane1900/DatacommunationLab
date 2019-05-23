@@ -1,0 +1,10 @@
+[default]
+name=Default
+runtime=host
+config-opts=
+run-opts=
+prefix=/home/mos17001/.cache/gnome-builder/install/DatacommunationLab/host
+app-id=
+postbuild=
+prebuild=
+default=true
