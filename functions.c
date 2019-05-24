@@ -57,11 +57,11 @@ void writeMessage(int fileDescriptor, char *message, struct sockaddr_in receiver
   rtp testPkt;
   testPkt.data = calloc(messageLength,sizeof(char));
   testPkt.data = message;
-  testPkt.head.crc =strlen(testPkt.data)+1;
   testPkt.head.seq = 2;
   testPkt.head.id = 3;
   testPkt.head.windowsize = 4;
   testPkt.head.flags = 5;
+  testPkt.head.crc = setChecksum (testPkt); //strlen(testPkt.data)+1;
   printf("start data: %s\n",testPkt.data);
   printf("start crc: %d\n",testPkt.head.crc);
   printf("start windowsize: %d\n",testPkt.head.windowsize);
@@ -183,3 +183,16 @@ int makeSocket(unsigned short int port) {
   return(sock);
 }
 
+int setChecksum (rtp packet)
+{
+  int i = 0;
+  int checksum;
+
+  checksum = packet.head.flags + packet.head.id + packet.head.seq + packet.head.windowsize;
+
+  for(i;packet.data[i] != '\0'|| i < 255;i++)
+    {
+    checksum += packet.data[i];
+    }
+  return checksum;
+}

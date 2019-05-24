@@ -68,6 +68,7 @@ void* readServerMessage (void* fileDescriptor);
 int makeSocket(unsigned short int port);
 char* serialize_UDP( rtp udp);
 rtp deserialize_UDP(char* buffer);
+int setChecksum (rtp packet);
 
 
 
