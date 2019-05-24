@@ -53,6 +53,7 @@ struct header{
   int seq;
   int windowsize;
   int crc;
+  int length2;
 };
 
 typedef struct rtp_struct{
@@ -68,7 +69,7 @@ void* readServerMessage (void* fileDescriptor);
 int makeSocket(unsigned short int port);
 char* serialize_UDP( rtp udp);
 rtp deserialize_UDP(char* buffer);
-int setChecksum (rtp packet);
+int Checksum (rtp packet);
 
 
 

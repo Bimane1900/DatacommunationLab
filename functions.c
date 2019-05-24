@@ -5,12 +5,13 @@
 char * serialize_UDP(rtp udp){
   //allocate memory for both header and the length of data.
   // Can not do sizeof(rtp) because data field is dynamic.
-  char * buffer2 = calloc(udp.head.crc+sizeof(struct header),1);
+  char * buffer2 = calloc(udp.head.length2+sizeof(struct header),1);
 
   memcpy(buffer2, &(udp.head),sizeof(struct header)); //the header
-  memcpy((buffer2+sizeof(struct header)),(udp.data), udp.head.crc); //the data
+  memcpy((buffer2+sizeof(struct header)),(udp.data), udp.head.length2); //the data
 
   return buffer2;
+  //free(buffer2);
 
 }
 
@@ -23,9 +24,10 @@ rtp deserialize_UDP(char* buffer){
   udp.data = calloc(messageLength,1);
 
   memcpy(&(udp.head), buffer, sizeof(struct header)); //the header
-  memcpy((udp.data), (buffer+sizeof(struct header)), udp.head.crc); //the data
+  memcpy((udp.data), (buffer+sizeof(struct header)), udp.head.length2); //the data
                                                                     //
   return udp;
+  //free(udp.data);
 }
 
 /* initSocketAddress
@@ -61,7 +63,8 @@ void writeMessage(int fileDescriptor, char *message, struct sockaddr_in receiver
   testPkt.head.id = 3;
   testPkt.head.windowsize = 4;
   testPkt.head.flags = 5;
-  testPkt.head.crc = setChecksum (testPkt); //strlen(testPkt.data)+1;
+  testPkt.head.crc = setChecksum (testPkt);
+  testPkt.head.length2 = strlen(testPkt.data)+1;
   printf("start data: %s\n",testPkt.data);
   printf("start crc: %d\n",testPkt.head.crc);
   printf("start windowsize: %d\n",testPkt.head.windowsize);
@@ -70,11 +73,13 @@ void writeMessage(int fileDescriptor, char *message, struct sockaddr_in receiver
   printf("start id: %d\n\n",testPkt.head.id);
 
   //size we want to send, the header + lenght of data field.
-  int size = (sizeof(struct header)) + testPkt.head.crc;
+  int size = (sizeof(struct header)) + testPkt.head.length2;
 
   //serialize the packet to be able to pass it to sendto as buffer
   buffer = serialize_UDP (testPkt);
   nOfBytes = sendto(fileDescriptor, buffer, size,0,(struct sockaddr*) &receiver, sizeof(struct sockaddr));
+  //free(buffer);
+  //free(testPkt.data);
   if(nOfBytes < 0) {
     perror("writeMessage - Could not write data\n");
     exit(EXIT_FAILURE);
@@ -136,6 +141,7 @@ int readMessageFrom(int fileDescriptor) {
       printf("flags: %d\n",testPkt.head.flags);
       printf("seq: %d\n",testPkt.head.seq);
       printf("id: %d\n\n",testPkt.head.id);
+      free(buffer);
       return 1;
     }
   return(0);
@@ -183,14 +189,14 @@ int makeSocket(unsigned short int port) {
   return(sock);
 }
 
-int setChecksum (rtp packet)
+int Checksum (rtp packet)
 {
   int i = 0;
   int checksum;
 
   checksum = packet.head.flags + packet.head.id + packet.head.seq + packet.head.windowsize;
 
-  for(i;packet.data[i] != '\0'|| i < 255;i++)
+  for(i;packet.data[i] != '\0'|| i < messageLength;i++)
     {
     checksum += packet.data[i];
     }
