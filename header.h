@@ -10,11 +10,13 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <time.h>
 
 #define PORT 5555
 #define hostNameLength 50
 #define messageLength  256
 #define MAXMSG 512
+#define BUFFSIZE 5
 
 #define SYN 1
 #define SYN_ACK 2
@@ -41,6 +43,11 @@
 #define WINDOW_FULL 11
 #define READ_SEQ_NUMBER 12
 #define READ_BUFFER 13
+#define WAIT_SYN 14
+#define WAIT_ACK 15
+
+#define ClientWinSize 8
+#define ServWinSize 6
 
 typedef struct threadArgument{
   int fileDescriptor;
@@ -62,14 +69,22 @@ typedef struct rtp_struct{
 }rtp;
 
 void initSocketAddress(struct sockaddr_in *name, char *hostName, unsigned short int port);
-void writeMessage(int fileDescriptor, char *message, struct sockaddr_in serverName);
-int readMessageFrom(int fileDescriptor);
+void writeMessage(int fileDescriptor, rtp packet, struct sockaddr_in serverName);
+int readMessageFrom(int fileDescriptor, rtp* packet);
 void* readInput (void* input);
 void* readServerMessage (void* fileDescriptor);
 int makeSocket(unsigned short int port);
 char* serialize_UDP( rtp udp);
 rtp deserialize_UDP(char* buffer);
 int Checksum (rtp packet);
+rtp prepareSYNpkt(int winSize);
+rtp prepareSYN_ACK (int seq);
+int recievedSYN_ACK(rtp packet);
+int recievedSYN(rtp packet);
+void initBuffer(rtp buff[BUFFSIZE]);
+int push(rtp buff[BUFFSIZE], rtp packet);
+rtp findPacket(rtp buff[BUFFSIZE], int seq, int flags);
+void pop(rtp buff[BUFFSIZE], int seq);
 
 
 
