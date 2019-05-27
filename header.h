@@ -73,7 +73,7 @@ typedef struct rtp_struct{
 
 void initSocketAddress(struct sockaddr_in *name, char *hostName, unsigned short int port);
 void writeMessage(int fileDescriptor, rtp packet, struct sockaddr_in serverName);
-int readMessageFrom(int fileDescriptor, rtp* packet);
+int readMessageFrom(int fileDescriptor, rtp* packet, struct sockaddr_in6* address);
 void* readInput (void* input);
 void* readServerMessage (void* fileDescriptor);
 int makeSocket(unsigned short int port);
@@ -85,9 +85,13 @@ rtp prepareSYN_ACK (int seq);
 rtp prepareACK(int seq);
 rtp prepareNACK(int expectedPktSeq);
 rtp preparePKT(char* msgToSend, int sendingSeq);
+rtp prepareFIN(int sendingSeq);
+rtp prepareFIN_ACK(int sendingSeq);
 int recievedSYN_ACK(rtp packet);
 int recievedSYN(rtp packet);
 int receivedPKT(rtp packet);
+int recievedFIN(rtp packet);
+int recievedFIN_ACK(rtp packet);
 int expectedPKT(rtp packet, int expectedPkt);
 int expectedACK(rtp packet, int expectedAck);
 int acceptablePKT(rtp packet, int acceptList[(ServWinSize/2)-1]);

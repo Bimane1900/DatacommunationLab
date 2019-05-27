@@ -15,8 +15,10 @@
 void* readMessages(void* socket){
   int* sock = (int*)socket;
   rtp packet,temp;
+  struct sockaddr_in6 address;
   while(1){
-    if(readMessageFrom(*sock, &packet)){
+    if(readMessageFrom(*sock, &packet, &address)){
+		//printf("address? %s\n",address.sin6_addr.s6_addr);
       if(packet.head.crc == Checksum(packet)){
 		temp = findPacket(recvPackets, packet.head.seq, -1);
 		if(temp.head.seq == -1){
@@ -142,9 +144,14 @@ int main(int argc, char *argv[]) {
 		 * when recieved and we change state*/
         packet = findNewPKT(recvPackets);
         if(receivedPKT(packet)){
-		  printf("\n");
-          printf("Recieved packet with data: %s\n",packet.data);
-          subState = READ_SEQ_NUMBER;
+		  if(recievedFIN(packet)){
+			  subState = WAIT_FIN;
+			  serverState = CONN_TEARDOWN;
+		  }else{
+			  printf("\n");
+			  printf("Recieved packet with data: %s\n",packet.data);
+			  subState = READ_SEQ_NUMBER;
+		  }
         }
           break;
       case READ_SEQ_NUMBER:
@@ -219,23 +226,42 @@ int main(int argc, char *argv[]) {
 
       switch (subState){
 
-        case INIT:
+        case WAIT_FIN:
+		  if(recievedFIN(packet)){
+			  printf("WAIT_FIN: recieved FIN\n");
+			  packet = prepareFIN_ACK(packet.head.seq);
+			  subState = SET_CHECKSUM;
+		  }else{
+			 subState = WAIT_PKT; 
+			 serverState = SLIDING_WINDOW;
+		  }
           break;
 
         case SET_CHECKSUM:
+			packet.head.crc = Checksum(packet);
+			writeMessage(sock,packet,clientName);
+			printf("Send FIN_ACK\n");
+			packet = prepareFIN(0);
+			packet.head.crc = Checksum(packet);
+			writeMessage(sock,packet,clientName);
+			printf("Send FIN\n");
+			push(sendPackets,packet);
+			subState = WAIT_FIN_ACK;
           break;
 
         case WAIT_FIN_ACK:
+			packet = findPacket(recvPackets,-1,FIN_ACK);
+			if(recievedFIN_ACK(packet)){
+				printf("Recieved FIN_ACK\n");
+				pop(sendPackets,packet.head.seq);
+				subState = CLOSED;
+				printf("Closed!\n");
+			}
+			resendTimeouts(sendPackets,sock,clientName);
           break;
 
-        case READ_CHECKSUM:
-          break;
-
-        case WAIT_FIN:
-          break;
-        case WAIT:
-          break;
         case CLOSED:
+			//remove client from list of connected clients
           break;
 
         default:

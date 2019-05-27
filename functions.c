@@ -48,6 +48,7 @@ void initSocketAddress(struct sockaddr_in *name, char *hostName, unsigned short 
   /* Fill in the host name into the sockaddr_in struct. */
   name->sin_addr = *(struct in_addr *)hostInfo->h_addr;
 }
+
 /* writeMessage
  * send packet to a socket.
  */
@@ -55,21 +56,6 @@ void writeMessage(int fileDescriptor, rtp packet, struct sockaddr_in receiver) {
   int nOfBytes;
   char* buffer;
   buffer = calloc(MAXMSG,1);
-  //Test packet
-  /*testPkt.data = calloc(messageLength,sizeof(char));
-  testPkt.data = message;
-  testPkt.head.seq = 2;
-  testPkt.head.id = 3;
-  testPkt.head.windowsize = 4;
-  testPkt.head.flags = 5;
-  testPkt.head.crc = Checksum (testPkt);
-  testPkt.head.length2 = strlen(testPkt.data)+1;*/
-  /*printf("start data: %s\n",packet.data);
-  printf("start crc: %d\n",packet.head.crc);
-  printf("start windowsize: %d\n",packet.head.windowsize);
-  printf("start flags: %d\n",packet.head.flags);
-  printf("start seq: %d\n",packet.head.seq);
-  printf("start id: %d\n\n",packet.head.id);*/
 
   //size we want to send, the header + lenght of data field.
   int size = (sizeof(struct header)) + packet.head.length2;
@@ -77,7 +63,7 @@ void writeMessage(int fileDescriptor, rtp packet, struct sockaddr_in receiver) {
   //serialize the packet to be able to pass it to sendto as buffer
   buffer = serialize_UDP (packet);
   nOfBytes = sendto(fileDescriptor, buffer, size,0,(struct sockaddr*) &receiver, sizeof(struct sockaddr));
-  //free(buffer);
+  free(buffer);
   //free(testPkt.data);
   if(nOfBytes < 0) {
     perror("writeMessage - Could not write data\n");
@@ -85,50 +71,18 @@ void writeMessage(int fileDescriptor, rtp packet, struct sockaddr_in receiver) {
   }
 }
 
-/*
- * Input loop used on client to be able to send messages*/
-/*void* readInput (void* socketInfo){
-  char messageString[messageLength];
-  argument* sockInfo = (argument*) socketInfo;    //TODO better name on argument TYPE
-  /*printf("\nType something and press [RETURN] to send it to the server.\n");
-  printf("Type 'quit' to nuke this program.\n");*/
-  /*fflush(stdin);
-  while(1) {
-    //printf("\n>");
-    fgets(messageString, messageLength, stdin);
-    //remove \n
-    messageString[strlen(messageString) - 1] = '\0';
-    if(strncmp(messageString,"quit\n",messageLength) != 0){
-      //Test packet
-      rtp testPkt;
-      testPkt.data = calloc(messageLength,sizeof(char));
-      testPkt.data = messageString;
-      testPkt.head.seq = -2;
-      testPkt.head.id = -3;
-      testPkt.head.windowsize = -4;
-      testPkt.head.flags = -1;
-      testPkt.head.crc = Checksum (testPkt);
-      testPkt.head.length2 = strlen(testPkt.data)+1;
-      writeMessage(sockInfo->fileDescriptor, testPkt,sockInfo->server);
-
-    }
-    else {
-      close(sockInfo->fileDescriptor);
-      exit(EXIT_SUCCESS);
-    }
-  }
-}*/
-/* readMessageFromServer
+/* readMessageFrom
  * Reads and prints data read from the file (socket
  * denoted by the file descriptor 'fileDescriptor'.
  */
-int readMessageFrom(int fileDescriptor, rtp* packet) {
+int readMessageFrom(int fileDescriptor, rtp* packet, struct sockaddr_in6* address) {
+	struct sockaddr_in6 sender;
   char* buffer;
   //prepare buffer for MAXMSG, we do not know how big packet will be
   buffer = calloc(MAXMSG, 1);
   int nOfBytes;
-
-  nOfBytes = recvfrom(fileDescriptor, buffer, MAXMSG,0,NULL,NULL);
+  socklen_t size = sizeof(sender);
+  nOfBytes = recvfrom(fileDescriptor, buffer, MAXMSG,0,(struct sockaddr*)&sender,&size);
   if(nOfBytes < 0) {
     perror("Could not read data from client\n");
     exit(EXIT_FAILURE);
@@ -142,7 +96,9 @@ int readMessageFrom(int fileDescriptor, rtp* packet) {
       //test packet
       rtp testPkt;
       //deserialize to put the data from buffer to struct
+	  //printf("in function.c address? %s\n",sender.sin6_addr.s6_addr);
       *packet = deserialize_UDP (buffer);
+	  *address = sender;
       /*printf("data: %s\n",packet->data);
       printf("crc: %d\n",packet->head.crc);
       printf("windowsize: %d\n",packet->head.windowsize);
@@ -275,6 +231,33 @@ rtp preparePKT(char* msgToSend, int sendingSeq){
   return newPKT;
 }
 
+/*prepares a FIN packet*/
+rtp prepareFIN(int sendingSeq){
+  rtp FINpkt;
+  FINpkt.data = calloc(messageLength,1);
+  FINpkt.data = "";
+  FINpkt.head.seq = sendingSeq;
+  FINpkt.head.windowsize = 0;
+  FINpkt.head.flags = FIN;
+  FINpkt.head.id = 0;
+  FINpkt.head.length2 = strlen(FINpkt.data)+1;
+  FINpkt.head.timestamp = time(NULL);
+  return FINpkt;
+}
+
+rtp prepareFIN_ACK(int sendingSeq){
+  rtp FINACK;
+  FINACK.data = calloc(messageLength,1);
+  FINACK.data = "";
+  FINACK.head.seq = sendingSeq;
+  FINACK.head.windowsize = 0;
+  FINACK.head.flags = FIN_ACK;
+  FINACK.head.id = 0;
+  FINACK.head.length2 = strlen(FINACK.data)+1;
+  FINACK.head.timestamp = time(NULL);
+  return FINACK;
+}
+
 //Checks if packet is valid and a SYN_ACK
 // returns 1 if true, else 0
 int recievedSYN_ACK(rtp packet){
@@ -303,6 +286,22 @@ int receivedPKT(rtp packet){
   }else{
     return 0;
   }
+}
+
+/*Returns 1 if packet is a FIN*/
+int recievedFIN(rtp packet){
+	if(packet.head.flags == FIN){
+		return 1;
+	}
+	return 0;
+}
+
+/*Returns 1 if packet is a FIN_ACK*/
+int recievedFIN_ACK(rtp packet){
+	if(packet.head.flags == FIN_ACK){
+		return 1;
+	}
+	return 0;
 }
 
 /*Checks if we recieved expected packet by

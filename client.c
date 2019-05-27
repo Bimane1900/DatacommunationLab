@@ -20,7 +20,7 @@
  * Input loop used on client to be able to send messages*/
 void* readInput (void* socketInfo){
   char messageString[messageLength];
-  argument* sockInfo = (argument*) socketInfo;    //TODO better name on argument TYPE
+  //argument* sockInfo = (argument*) socketInfo;    //TODO better name on argument TYPE
   /*printf("\nType something and press [RETURN] to send it to the server.\n");
   printf("Type 'quit' to nuke this program.\n");*/
   fflush(stdin);
@@ -32,8 +32,8 @@ void* readInput (void* socketInfo){
       strncpy(msgToSend,messageString,messageLength);
     }
     else {
-      close(sockInfo->fileDescriptor);
-      exit(EXIT_SUCCESS);
+      //close(sockInfo->fileDescriptor);
+      //exit(EXIT_SUCCESS);
     }
   }
 }
@@ -47,8 +47,10 @@ void* readInput (void* socketInfo){
 void* readServerMessage (void* socket){
   int* sock = (int*)socket;
   rtp packet,temp;
+  struct sockaddr_in6 address;
   while(1){
-    if(readMessageFrom(*sock, &packet)){
+    if(readMessageFrom(*sock, &packet, &address)){
+		//printf("adress? %s\n", address.sin6_addr.s6_addr);
       //Check the crc field, if it does not match, dont process packet
       if(packet.head.crc == Checksum(packet)){
         temp =findPacket (recvPackets,packet.head.seq,-1);
@@ -216,12 +218,19 @@ int main(int argc, char *argv[]) {
           }
 		  //If msgToSend is updated, will send data if it is
 		  else if(strcmp(msgToSend,"")!= 0){
-			  printf("\n");
-            packet = preparePKT(msgToSend, sendingSeq); //prepare packet with msgToSend as data
-            strncpy(msgToSend,"",messageLength);
-            machineState = SET_CHECKSUM;
+			  if(strcmp(msgToSend,"disconnect") == 0){
+				  machineState =INIT;
+				  senderState = CONN_TEARDOWN;
+			  }
+			  else{
+				printf("\n");
+				packet = preparePKT(msgToSend, sendingSeq); //prepare packet with msgToSend as data
+				strncpy(msgToSend,"",messageLength);
+				machineState = SET_CHECKSUM;
+			  } 
           }
           break;
+		  
         case WINDOW_FULL:
           resendTimeouts(sendPackets, sock, serverName); //Check for timeouts
           packet = findNewPKT(recvPackets);
@@ -231,6 +240,7 @@ int main(int argc, char *argv[]) {
             machineState = READ_SEQ_NUMBER;
           }
           break;
+		  
         case SET_CHECKSUM:
           packet.head.crc = Checksum(packet);
           randomcorrupt = rand()%100; //Random corrupt packet by manipulating crc (fixed seed for rand)
@@ -246,6 +256,7 @@ int main(int argc, char *argv[]) {
           push(sendPackets, packet); //push packet to sendPackets for timeouts and resending
           machineState = CHECK_WINDOW_SIZE;
           break;
+		  
         case CHECK_WINDOW_SIZE:
 		/*go to different states depending if window size is full*/
           if(windowIsFull(sendingSeq,expectedAck,sendingWindow)){
@@ -256,6 +267,7 @@ int main(int argc, char *argv[]) {
             machineState = WINDOW_NOT_FULL;
           }
           break;
+		  
         case READ_SEQ_NUMBER:
 		printf("expeckted ack: %d\n",expectedAck);
 		  //if packet is expected ACK, then process it and slide window
@@ -295,6 +307,7 @@ int main(int argc, char *argv[]) {
             machineState = CHECK_WINDOW_SIZE;
           }
           break;
+		  
         case READ_BUFFER:
           packet = findPacket (acceptedPackets, expectedAck, -1);
 		  //if expected ACK is in acceptedPackets, we can process it and pop it and also slideWindow more
@@ -314,23 +327,55 @@ int main(int argc, char *argv[]) {
       switch (machineState){
 
         case INIT:
+			printf("init disconnect\n");
+			packet = prepareFIN(sendingSeq);
+			machineState = SET_CHECKSUM;
           break;
 
         case SET_CHECKSUM:
+			packet.head.crc = Checksum(packet);
+			writeMessage(sock,packet,serverName);
+			if(packet.head.flags == FIN_ACK){
+				printf("FIN_ACK sent\n");
+				timer = time(NULL);
+				machineState = WAIT;
+			}
+			else{
+				printf("FIN sent\n");
+				push(sendPackets, packet);
+				machineState = WAIT_FIN_ACK;
+			}
           break;
 
         case WAIT_FIN_ACK:
-          break;
-
-        case READ_CHECKSUM:
+			resendTimeouts(sendPackets,sock,serverName);
+			packet = findPacket(recvPackets,-1,FIN_ACK);
+			if(recievedFIN_ACK(packet)){
+				printf("FIN_ACK recieved\n");
+				pop(recvPackets,packet.head.seq);
+				machineState = WAIT_FIN;
+			}
           break;
 
         case WAIT_FIN:
-          senderState = 1;
+			packet = findPacket(recvPackets, -1, FIN);
+			if(recievedFIN(packet)){
+				printf("FIN recieved\n");
+				packet = prepareFIN_ACK(packet.head.seq);
+				machineState = SET_CHECKSUM;
+			}
           break;
+		  
         case WAIT:
+			if(time(NULL)-timer >= 10){
+				machineState = CLOSED;
+			}
           break;
+		  
         case CLOSED:
+			printf("Closing socket\n");
+			close(sock);
+			exit(EXIT_SUCCESS);
           break;
 
         default:
