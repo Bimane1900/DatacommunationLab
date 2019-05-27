@@ -45,9 +45,11 @@
 #define READ_BUFFER 13
 #define WAIT_SYN 14
 #define WAIT_ACK 15
+#define WAIT_PKT 16
 
 #define ClientWinSize 8
 #define ServWinSize 6
+#define INVALID_SEQ -1
 
 typedef struct threadArgument{
   int fileDescriptor;
@@ -61,6 +63,7 @@ struct header{
   int windowsize;
   int crc;
   int length2;
+  int timestamp;
 };
 
 typedef struct rtp_struct{
@@ -77,15 +80,29 @@ int makeSocket(unsigned short int port);
 char* serialize_UDP( rtp udp);
 rtp deserialize_UDP(char* buffer);
 int Checksum (rtp packet);
-rtp prepareSYNpkt(int winSize);
+rtp prepareSYNpkt(int winSize, int seq);
 rtp prepareSYN_ACK (int seq);
+rtp prepareACK(int seq);
+rtp prepareNACK(int expectedPktSeq);
+rtp preparePKT(char* msgToSend, int sendingSeq);
 int recievedSYN_ACK(rtp packet);
 int recievedSYN(rtp packet);
+int receivedPKT(rtp packet);
+int expectedPKT(rtp packet, int expectedPkt);
+int expectedACK(rtp packet, int expectedAck);
+int acceptablePKT(rtp packet, int acceptList[(ServWinSize/2)-1]);
+int acceptableACK(rtp packet, int acceptList[(ServWinSize/2)-1]);
+int validNACK(rtp packet, int acceptList[(ServWinSize/2)-1], int expected);
 void initBuffer(rtp buff[BUFFSIZE]);
 int push(rtp buff[BUFFSIZE], rtp packet);
 rtp findPacket(rtp buff[BUFFSIZE], int seq, int flags);
+rtp findNewPKT(rtp buff[BUFFSIZE]);
 void pop(rtp buff[BUFFSIZE], int seq);
-
-
+void printBuff(rtp buff[BUFFSIZE]);
+void updateSendSeq(int* sendSeq,int winsize, int startSeq);
+void updateAcceptablePKTs(int acceptablePkts[], int size, int slideWin, int startSeq);
+void slideWindow(int *expectedPKT, int acceptList[],int slideWin, int startSeq);
+void resendTimeouts(rtp buff[BUFFSIZE],int sock, struct sockaddr_in serverName);
+int windowIsFull(int sendSeq, int expected, int windowsize);
 
 #endif

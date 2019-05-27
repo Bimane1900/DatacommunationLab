@@ -87,12 +87,12 @@ void writeMessage(int fileDescriptor, rtp packet, struct sockaddr_in receiver) {
 
 /*
  * Input loop used on client to be able to send messages*/
-void* readInput (void* socketInfo){
+/*void* readInput (void* socketInfo){
   char messageString[messageLength];
   argument* sockInfo = (argument*) socketInfo;    //TODO better name on argument TYPE
   /*printf("\nType something and press [RETURN] to send it to the server.\n");
   printf("Type 'quit' to nuke this program.\n");*/
-  fflush(stdin);
+  /*fflush(stdin);
   while(1) {
     //printf("\n>");
     fgets(messageString, messageLength, stdin);
@@ -109,7 +109,7 @@ void* readInput (void* socketInfo){
       testPkt.head.flags = -1;
       testPkt.head.crc = Checksum (testPkt);
       testPkt.head.length2 = strlen(testPkt.data)+1;
-      writeMessage(sockInfo->fileDescriptor, testPkt,sockInfo->server );
+      writeMessage(sockInfo->fileDescriptor, testPkt,sockInfo->server);
 
     }
     else {
@@ -117,7 +117,7 @@ void* readInput (void* socketInfo){
       exit(EXIT_SUCCESS);
     }
   }
-}
+}*/
 /* readMessageFromServer
  * Reads and prints data read from the file (socket
  * denoted by the file descriptor 'fileDescriptor'.
@@ -204,15 +204,16 @@ int Checksum (rtp packet)
 /*prepares a SYNpkt and returns it
  * can specify winSize with argument
  * but should be able to specify seq aswell*/
-rtp prepareSYNpkt(int winSize){
+rtp prepareSYNpkt(int winSize, int seq){
   rtp SYNpkt;
   SYNpkt.data = calloc(messageLength,1);
   SYNpkt.data = "";
-  SYNpkt.head.seq = 0;
+  SYNpkt.head.seq = seq;
   SYNpkt.head.windowsize = winSize;
   SYNpkt.head.flags = SYN;
   SYNpkt.head.id = 0;
   SYNpkt.head.length2 = strlen(SYNpkt.data)+1;
+  SYNpkt.head.timestamp = time(NULL);
   return SYNpkt;
 }
 
@@ -226,13 +227,58 @@ rtp prepareSYN_ACK (int seq){
   SYN_ACKpkt.head.flags = SYN_ACK;
   SYN_ACKpkt.head.id = 0;
   SYN_ACKpkt.head.length2 = strlen(SYN_ACKpkt.data)+1;
+  SYN_ACKpkt.head.timestamp = time(NULL);
   return SYN_ACKpkt;
+}
+
+/*Prepares ACK on packet with sequence
+ * number seq*/
+rtp prepareACK(int seq){
+  rtp ACKpkt;
+  ACKpkt.data = calloc(messageLength,1);
+  ACKpkt.data = "";
+  ACKpkt.head.seq = seq;
+  ACKpkt.head.windowsize = 0;
+  ACKpkt.head.flags = ACK;
+  ACKpkt.head.id = 0;
+  ACKpkt.head.length2 = strlen(ACKpkt.data)+1;
+  ACKpkt.head.timestamp = time(NULL);
+  return ACKpkt;
+}
+
+/*Prepares NACK on expected packet*/
+rtp prepareNACK(int expectedPktSeq){
+  rtp NACKpkt;
+  NACKpkt.data = calloc(messageLength,1);
+  NACKpkt.data = "";
+  NACKpkt.head.seq = expectedPktSeq;
+  NACKpkt.head.windowsize = 0;
+  NACKpkt.head.flags = NACK;
+  NACKpkt.head.id = 0;
+  NACKpkt.head.length2 = strlen(NACKpkt.data)+1;
+  NACKpkt.head.timestamp = time(NULL);
+  return NACKpkt;
+}
+
+/*prepares a packet to send with seq num set to
+ * sendingSeq and data is msgToSend*/
+rtp preparePKT(char* msgToSend, int sendingSeq){
+  rtp newPKT;
+  newPKT.data= calloc((strlen(msgToSend)+1),1);
+  strncpy(newPKT.data,msgToSend,(strlen(msgToSend)+1));
+  newPKT.head.seq = sendingSeq;
+  newPKT.head.windowsize = 0;
+  newPKT.head.flags = 0;
+  newPKT.head.id = 0;
+  newPKT.head.length2 = strlen(newPKT.data)+1;
+  newPKT.head.timestamp = time(NULL);
+  return newPKT;
 }
 
 //Checks if packet is valid and a SYN_ACK
 // returns 1 if true, else 0
 int recievedSYN_ACK(rtp packet){
-  if(packet.head.flags == SYN_ACK && packet.head.seq != -1){
+  if(packet.head.flags == SYN_ACK && packet.head.seq != INVALID_SEQ){
     return 1;
   }
   return 0;
@@ -241,8 +287,73 @@ int recievedSYN_ACK(rtp packet){
 //Checks if packet is valid and a SYN
 // returns 1 if true, else 0
 int recievedSYN(rtp packet){
-  if(packet.head.flags == SYN && packet.head.seq != -1){
+  if(packet.head.flags == SYN && packet.head.seq != INVALID_SEQ){
     return 1;
+  }
+  return 0;
+}
+
+/*checks if packet is valid, is used
+ * when finding new packets. returns 1
+ * when packet is valid which means
+ * we recieved a packet*/
+int receivedPKT(rtp packet){
+  if(packet.head.seq != -1){
+    return 1;
+  }else{
+    return 0;
+  }
+}
+
+/*Checks if we recieved expected packet by
+ * comparing the sequence numbers*/
+int expectedPKT(rtp packet, int expectedPkt){
+  if(packet.head.seq == expectedPkt){
+    return 1;
+  }
+  return 0;
+}
+
+/*Checks if we recived and expected ACK*/
+int expectedACK(rtp packet, int expectedAck){
+  if(packet.head.seq == expectedAck && packet.head.flags == ACK){
+    return 1;
+  }
+  return 0;
+}
+
+/*Checks if packet is an acceptable packet to recieve
+ * by comparing it will list of accepting sequence num*/
+int acceptablePKT(rtp packet, int acceptList[(ServWinSize/2)-1]){
+  for(int i = 0; i < (ServWinSize/2)-1 ; i++){
+    if(packet.head.seq == acceptList[i]){
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/*Check if packet has acceptable sequence number
+ * and if it has flags ACK*/
+int acceptableACK(rtp packet, int acceptList[(ServWinSize/2)-1]){
+  for(int i = 0; i < (ServWinSize/2)-1 ; i++){
+    if(packet.head.seq == acceptList[i] && packet.head.flags == ACK){
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/*Check if packet is a valid NACK, will be if sequence number
+ * is acceptable or expected*/
+int validNACK(rtp packet, int acceptList[(ServWinSize/2)-1], int expected){
+	if(packet.head.seq == expected && packet.head.flags == NACK){
+		return 1;
+	}
+  for(int i = 0; i < (ServWinSize/2)-1 ; i++){
+    if(packet.head.seq == acceptList[i] && packet.head.flags == NACK){
+      return 1;
+    }
   }
   return 0;
 }
@@ -253,7 +364,7 @@ int recievedSYN(rtp packet){
 void initBuffer(rtp buff[BUFFSIZE]){
   for (int i =0 ; i < BUFFSIZE; i++)
     {
-      buff[i].head.seq = -1;
+      buff[i].head.seq = INVALID_SEQ;
     }
 }
 
@@ -264,7 +375,7 @@ void initBuffer(rtp buff[BUFFSIZE]){
 int push(rtp buff[BUFFSIZE], rtp packet){
   for (int i = 0; i < BUFFSIZE ; i++)
     {
-      if(buff[i].head.seq == -1){
+      if(buff[i].head.seq == INVALID_SEQ){
         buff[i] = packet;
         return 1;
       }
@@ -277,7 +388,7 @@ int push(rtp buff[BUFFSIZE], rtp packet){
  * or by looking at flags. Returns the packet.
  * If not found, returns an invalid packet*/
 rtp findPacket(rtp buff[BUFFSIZE], int seq, int flags){
-  if(seq == -1){
+  if(seq == INVALID_SEQ){
     for (int i = 0; i < BUFFSIZE; i++)
       {
         if(buff[i].head.flags == flags){
@@ -293,7 +404,22 @@ rtp findPacket(rtp buff[BUFFSIZE], int seq, int flags){
     }
   }
 
-  rtp error; error.head.seq = -1;
+  rtp error; error.head.seq = INVALID_SEQ;
+  return error;
+}
+
+/*returns any new PKT recieved in buff
+ * if not new PKT exists, returns invalid
+ * PKT*/
+rtp findNewPKT(rtp buff[BUFFSIZE]){
+  for (int i = 0; i < BUFFSIZE; i++)
+    {
+      if(buff[i].head.seq != INVALID_SEQ){
+        return buff[i];
+      }
+    }
+  rtp error;
+  error.head.seq = INVALID_SEQ;
   return error;
 }
 
@@ -304,9 +430,88 @@ void pop(rtp buff[BUFFSIZE], int seq){
   for (int i =0 ; i < BUFFSIZE; i++)
     {
       if(buff[i].head.seq == seq){
-        buff[i].head.seq = -1;
+        buff[i].head.seq = INVALID_SEQ;
+        return;
       }
     }
 }
+
+/*prints out all packets in buff*/
+void printBuff(rtp buff[BUFFSIZE]){
+  for(int i = 0; i<BUFFSIZE; i++){
+    printf("packet %d: seq %d flags %d\n",i,buff[i].head.seq,buff[i].head.flags);
+  }
+}
+
+/*Updates sequence number that is used to
+ * send next packet. Will se to starting seq
+ * if reached a limit*/
+void updateSendSeq(int* sendSeq,int winsize, int startSeq){
+  (*sendSeq)++;
+  if((*sendSeq) == winsize + startSeq){
+    (*sendSeq) = startSeq;
+  }
+}
+
+/*updates which sequence numbers are currently
+ * acceptable to recieve, sets to startin seq
+ * if reached limit*/
+void updateAcceptablePKTs(int acceptablePkts[], int size, int slideWin, int startSeq){
+  for(int i = 0; i < size ; i++){
+    acceptablePkts[i]++;
+    if(acceptablePkts[i] == slideWin + startSeq)
+      acceptablePkts[i] = startSeq;
+  }
+}
+
+/*Slides window by updating expected packet seq
+ * and updating acceptable packet seq
+ * *expectedPKT - sequece num of expected PKT
+ * acceptList - list of sequence number that is accepted
+ * slideWin - window size
+ * startSeq - first sequence number used*/
+void slideWindow(int *expectedPKT, int acceptList[],int slideWin, int startSeq){
+  (*expectedPKT)++;
+  if((*expectedPKT) == slideWin + startSeq)
+    (*expectedPKT) = startSeq;
+  updateAcceptablePKTs(acceptList,(slideWin/2)-1, slideWin, startSeq);
+}
+
+/*Resends any packets in buff where timeout is triggered*/
+void resendTimeouts(rtp buff[BUFFSIZE],int sock, struct sockaddr_in serverName){
+  for(int i = 0; i < BUFFSIZE; i++){
+    if(time(NULL) -  buff[i].head.timestamp > 30 && buff[i].head.seq != -1){
+      printf("Resending %s\n",buff[i].data);
+      writeMessage (sock, buff[i], serverName);
+      buff[i].head.timestamp = time(NULL);
+    }
+  }
+}
+
+/*Calculates if window is full or not
+ * sendSeq - sequence number of next packet to send
+ * expected - what sequence number we expect to slide window
+ * windowsize - windowsize to compare to*/
+int windowIsFull(int sendSeq, int expected, int windowsize){
+//printf("sendSeq: %d, expected %d, windowsize %d\n", sendSeq, expected,windowsize);
+  int diff;
+  if(sendSeq >= expected){
+    diff = sendSeq - expected;
+  //  printf("diff: %d\n",diff);
+    if(diff >= (windowsize/2))
+      return 1;
+    else return 0;
+  }
+  else{
+    diff = expected - sendSeq;
+    //printf("diff: %d\n",diff);
+    if(diff <= (windowsize/2))
+      return 1;
+    else return 0;
+  }
+}
+
+
+
 
 
