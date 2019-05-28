@@ -1,3 +1,13 @@
+/*
+ * Simon Roysson and Mareks Ozols
+ * 
+ * header.h - contains all definitions for flags
+ * ports, sizes and states. Some definitions can
+ * be change to alter behavior of program.
+ * (TIMEOUT, FAIL_THRESHOLD, ServWinSize).
+ * Also contains needed function and struct
+ * declaration for the program to work*/
+
 #ifndef HEADER_FILE
 #define HEADER_FILE
 #include <stdio.h>
@@ -17,6 +27,7 @@
 #define messageLength  256
 #define MAXMSG 512
 #define BUFFSIZE 10
+#define INVALID_SEQ -1
 
 #define SYN 1
 #define SYN_ACK 2
@@ -47,16 +58,13 @@
 #define WAIT_ACK 15
 #define WAIT_PKT 16
 
+
+//definitions used in program
+//can be changed to get different results
 #define ClientWinSize 8
 #define ServWinSize 4
-#define INVALID_SEQ -1
 #define TIMEOUT 5
-
-
-typedef struct threadArgument{
-  int fileDescriptor;
-  struct sockaddr_in server;
-}argument;
+#define FAIL_THRESHOLD 30
 
 struct header{
   int flags;

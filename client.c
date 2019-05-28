@@ -1,7 +1,10 @@
-/* File: client.c
- * Trying out socket communication between processes using the Internet protocol family.
- * Usage: client [host name], that is, if a server is running on 'lab1-6.idt.mdh.se'
- * then type 'client lab1-6.idt.mdh.se' and follow the on-screen instructions.
+/* 
+ * Simon Roysson and Mareks Ozols
+ * 
+ * client.c - contains state machines for client-side
+ * communication with server.c. Can send packets with
+ * precoded array and userInput. Type client in terminal 
+ * to connect to running server on same machine (loopback)
  */
 #include "header.h"
 
@@ -10,19 +13,16 @@
   int timer = 0; //timer for timeouts (maybe can be in main too)
   rtp sendPackets[BUFFSIZE]; //buffer for storing sent packets incase resend is needed, remove packet when ACK is received
   rtp recvPackets[BUFFSIZE]; //buffer for storing recieved packets, remove packet when sending ACK on a packet
-  rtp acceptedPackets[BUFFSIZE];
+  rtp acceptedPackets[BUFFSIZE]; //buffer for storing accepted packets, will be remove when read as expected
   int ConnRequest = 1; //hardcoded trigger right now to get the connection to start
-  char msgToSend[messageLength] = "";
+  char msgToSend[messageLength] = ""; //check with this variable is there is anything to send from user input
 
 
 
 /*
- * Input loop used on client to be able to send messages*/
+ * Input loop used on client to be able to read input into mstToSend variable*/
 void* readInput (void* socketInfo){
   char messageString[messageLength];
-  //argument* sockInfo = (argument*) socketInfo;    //TODO better name on argument TYPE
-  /*printf("\nType something and press [RETURN] to send it to the server.\n");
-  printf("Type 'quit' to nuke this program.\n");*/
   fflush(stdin);
   while(1) {
     printf("\n>");
@@ -31,17 +31,13 @@ void* readInput (void* socketInfo){
     if(strncmp(messageString,"quit\n",messageLength) != 0){
       strncpy(msgToSend,messageString,messageLength);
     }
-    else {
-      //close(sockInfo->fileDescriptor);
-      //exit(EXIT_SUCCESS);
-    }
   }
 }
 
 
 /*readServerMessage
- * function that is used by thred which checs if there has
- * come in som message from server by calling
+ * function that is used by thread which checks if there has
+ * come in some message from server by calling
  * function readMessageFromServer
  * */
 void* readServerMessage (void* socket){
@@ -50,19 +46,16 @@ void* readServerMessage (void* socket){
   struct sockaddr_in6 address;
   while(1){
     if(readMessageFrom(*sock, &packet, &address)){
-		//printf("adress? %s\n", address.sin6_addr.s6_addr);
       //Check the crc field, if it does not match, dont process packet
       if(packet.head.crc == Checksum(packet)){
         temp =findPacket (recvPackets,packet.head.seq,-1);
 		//Check if packet with that sequence already exists, push only if not
         if(temp.head.seq == -1){
         //if buffer is not full, push it to recieverbuffer so state machine can read it
-			//printf("\n recieved packet with seq %d\n", packet.head.seq);
           if(!push(recvPackets,packet)){
             printf("Buffer full, packet thrown away\n");
           }
         }else{
-		  //printBuff(recvPackets);
           printf("packet with seqNum %d already in buffer\n",packet.head.seq);
         }
       }else{
@@ -80,21 +73,19 @@ int main(int argc, char *argv[]) {
   char hostName[hostNameLength];
   pthread_t writeToServer;
   pthread_t readFromServer;
-  int test1;
-  int test2;
+  int reader;
+  int userinput;
   int senderState = CONN_SETUP;
   int machineState = INIT;
-  //argument input;
   int expectedAck; //expected ack sequence number, set when first packet is sent
   int acceptableAcks[ClientWinSize-1]; //keeps sequence number for acceptable acks/nacks
-  //acceptableAcks[0] = 11;
-  //acceptableAcks[1] = 12;
   int sendingSeq = 10; // current sending sequence number
   int startingSeq = 10; //save starting sequence 
   int sendingWindow = ClientWinSize; //clients requested winsize
   int tempPacketSeq;
   rtp isInBuffPacket;
   
+  //variable to send packets a lot of packet, so we can see sliding window data flow
   const char *testSending[] = {"a","b","c","d","e","f"};
   int sendIndex = 0;
   int sendTestSize = 6;
@@ -110,25 +101,22 @@ int main(int argc, char *argv[]) {
   strncpy(hostName, "127.0.0.1",hostNameLength);
 
   /* Create the socket, client need to listen to another port
-   * because it is on same machine I think, else server will
+   * because it is on same machine, else server will
       pick up its own messages */
   sock = makeSocket(PORT+1);
 
   /* Initialize the socket address */
   initSocketAddress(&serverName, hostName, PORT);
 
-	srand(time(NULL));
-    //input.fileDescriptor = sock;
-    //input.server = serverName;
-	int print = 12;
+	srand(time(NULL));//new seed for random numbers, used for generating errors in packets
 
     /*Create thread that will check incoming messages from server and print them on screen*/
-    test1 = pthread_create(&readFromServer, NULL,readServerMessage, (void*) &sock);
-    if(test1 != 0)
+    reader = pthread_create(&readFromServer, NULL,readServerMessage, (void*) &sock);
+    if(reader != 0)
       printf("%d : %s\n",errno,strerror(errno));
     /*Create thread that will wait for input from user and will send it further to server*/
-    test2 = pthread_create(&writeToServer,NULL,readInput,NULL/*(void*)&input*/);
-    if(test2 != 0)
+    userinput = pthread_create(&writeToServer,NULL,readInput,NULL);
+    if(userinput != 0)
       printf("%d : %s\n", errno,strerror(errno));
 	  
     while(1){
@@ -147,27 +135,26 @@ int main(int argc, char *argv[]) {
 
         case SET_CHECKSUM:
           /*If current packet we are sending is a SYN
-           * then we set a timer and update our expectedAck
-           * to be ready for SYN_ACK and be able to resend*/
+           * then we update our expectedAck to be ready
+           * for SYN_ACK and is added to our sendbuffer
+		   * be able to resend if SYN is lost*/
           if(packet.head.flags == SYN){
             packet.head.crc = Checksum(packet); //set Checksum
             writeMessage (sock, packet, serverName); //send SYN
             printf("send SYN, seq: %d\n",packet.head.seq);
             expectedAck = packet.head.seq; //Update expected to be same seq number
             push(sendPackets,packet); //push packet to sendBuffer incase we need to resend
-            //timer = time(NULL); //set timer
             machineState = WAIT_SYN_ACK;
           }
-          /*If current packet is a SYN_ACK, we dont
-           * have to set timer and such, there is no
-           * expectation of resending either*/
+          /*If current packet is a SYN_ACK, 
+		   * there is no expectation of 
+		   * resending so we dont have to add to sendbuffer*/
           if(packet.head.flags == SYN_ACK){
             packet.head.crc = Checksum(packet);
-            writeMessage (sock, packet, serverName);
-            //pop(recvPackets,packet.head.seq);
+            writeMessage (sock, packet, serverName); //send SYN_ACK
             printf("send SYN_ACK, seq: %d\n",packet.head.seq);
             machineState = EST_CONN;
-			timer = time(NULL);
+			timer = time(NULL); //set timer for EST_CONN state
           }
           break;
 
@@ -176,47 +163,26 @@ int main(int argc, char *argv[]) {
           /*Use findpacket to try get expectedAck
            * the if-statement will become true when we
            * have the correct ACK*/
-          packet = findPacket (recvPackets,expectedAck,-1);
+          packet = findPacket (recvPackets,expectedAck,-1);//could also probably search for SYN_ACK with third parameter
           if(recievedSYN_ACK(packet)){
              printf("recieved SYN_ACK, seq: %d\n",packet.head.seq);
              pop(sendPackets,expectedAck); //Can pop the resend packet now because we recieved ack
              pop(recvPackets,packet.head.seq); //pop the ACK
-             //slideWindow (&expectedAck,acceptableAcks,sendingWindow,startingSeq); //update because we expected next sequence number
-			 sendingWindow = packet.head.windowsize;
-			 for(int i = 0; i < sendingWindow-1; i++){
+			 sendingWindow = packet.head.windowsize; //set sending window to servers windowsize
+			 for(int i = 0; i < sendingWindow-1; i++){ //set how many acceptable ACKS we have based on windowsize
 				 acceptableAcks[i]= expectedAck+i+1;
 			 }
              packet = prepareSYN_ACK (packet.head.seq);
              machineState = SET_CHECKSUM;
-             //machineState = WAIT_SYN;
           }
           break;
 
-        /*case WAIT_SYN:
-          /*use findPacket to try get packets with
-           * SYN flags on them*/
-          /*packet = findPacket (recvPackets,-1,SYN);
-          if(recievedSYN(packet)){
-            printf("recieved SYN, seq: %d\n",packet.head.seq);
-            sendingWindow = packet.head.windowsize;
-            packet = prepareSYN_ACK (packet.head.seq);
-            machineState = SET_CHECKSUM;
-          }
-          break;*/
         case EST_CONN:
-		  //if(time(NULL)-timer > TIMEOUT+3){
-            
-            
-            //updateSendSeq(&sendingSeq,sendingWindow,startingSeq);
-		  /*}
-		  packet = findPacket(recvPackets,-1,SYN);
-		  if(recievedSYN(packet)){
-			  machineState = WAIT_SYN;
-		  }*/
-          //
+		  //the timer is there to have some silence before sliding window starts(Testing purposes to see output)
 		  if(time(NULL)-timer > TIMEOUT){
 			  printf("EST_CONN!\n");
-			  printf("expected: %d  senderSeq: %d\n",expectedAck, sendingSeq);
+			  //parameters for expected and sequence number to use going into sliding window
+			  printf("expected: %d  senderSeq: %d\n",expectedAck, sendingSeq); 
 			  printf("\n");
 			senderState = SLIDING_WINDOW;
             machineState = WINDOW_NOT_FULL;
@@ -233,37 +199,35 @@ int main(int argc, char *argv[]) {
 
         case WINDOW_NOT_FULL:
           resendTimeouts(sendPackets, sock, serverName); //Check for timeouts
-          //packet = findNewPKT(recvPackets);
+		  /*Automatic sending of packets will trigger as long as this is true
+		   * and it will be for 6 packets as default, can be changed at variables.
+		   * Used to get a data flow to evaluate sliding window behavior*/
 		  if(sendIndex < sendTestSize){
-			  //printf("sendIndex %d, sendTestSize %d \n", sendIndex, sendTestSize);
-			  packet = preparePKT(testSending[sendIndex], sendingSeq); //prepare packet with msgToSend as data
-			  strncpy(msgToSend,"",messageLength);
+			  packet = preparePKT(testSending[sendIndex], sendingSeq);
 			  machineState = SET_CHECKSUM;
 			  sendIndex++;
 			  break;
 		  }
+		  //First we try to process expected ACK if exists in buffer
 		  packet = findPacket(recvPackets,expectedAck, -1);
-		  /*if(print>0){
-			  printf("SEQ: %d\n",packet.head.seq);
-			  print--;
-		  }*/
 		  if(expectedACK(packet, expectedAck)){
 			printf("\n");
             printf("Recieved expected packet, seq: %d\n",packet.head.seq);
             machineState = READ_SEQ_NUMBER;
 			break;
 		  }
+		  //if recieved non-expeceted packet, check sequence number
 		  packet = findNewPKT(recvPackets);
-		  //If recieved packet, check sequence number
           if(receivedPKT (packet)){
 			printf("\n");
             printf("Recieved packet, seq: %d\n",packet.head.seq);
             machineState = READ_SEQ_NUMBER;
 			break;
           }
-		  //If msgToSend is updated, will send data if it is
+		  //If msgToSend isnt empty, will send data if it is
+		  //preparing a packet.
 		  if(strcmp(msgToSend,"")!= 0){
-			  if(strcmp(msgToSend,"disconnect") == 0){
+			  if(strcmp(msgToSend,"disconnect") == 0){ //initate teardown if string is disconnect
 				  machineState =INIT;
 				  senderState = CONN_TEARDOWN;
 			  }
@@ -278,19 +242,16 @@ int main(int argc, char *argv[]) {
 		  
         case WINDOW_FULL:
           resendTimeouts(sendPackets, sock, serverName); //Check for timeouts
+		  //First we try to process expected ACK if exists in buffer
 		  packet = findPacket(recvPackets,expectedAck, -1);
-		  /*if(print>0){
-			  printf("SEQ: %d\n",packet.head.seq);
-			  print--;
-		  }*/
 		  if(expectedACK(packet, expectedAck)){
 			printf("\n");
             printf("Recieved expected packet, seq: %d\n",packet.head.seq);
             machineState = READ_SEQ_NUMBER;
 			break;
 		  }
+		  //if recieved non-expeceted packet, check sequence number
           packet = findNewPKT(recvPackets);
-		  //If recieved packet, check sequence number
           if(receivedPKT (packet)){
             printf("Recieved packet, seq: %d\n",packet.head.seq);
             machineState = READ_SEQ_NUMBER;
@@ -298,7 +259,7 @@ int main(int argc, char *argv[]) {
           break;
 		  
         case SET_CHECKSUM:
-          packet.head.crc = Checksum(packet);
+          packet.head.crc = Checksum(packet); //set checksum on packet before sending
           printf("Sent packet, seq: %d\n",packet.head.seq);
 		  writeMessage (sock, packet, serverName); //send packet
           updateSendSeq(&sendingSeq,sendingWindow, startingSeq); //update out next sending sequence number
@@ -325,20 +286,21 @@ int main(int argc, char *argv[]) {
             printf("Recieved expectec ACK, seq: %d\n",packet.head.seq);
             pop(recvPackets, expectedAck); //pop from recvPackets
             pop(sendPackets, expectedAck); //pop from sendPacket to stop resending
-            slideWindow(&expectedAck,acceptableAcks, sendingWindow,startingSeq);
+			//can slide window when expected ACK is processed
+            slideWindow(&expectedAck,acceptableAcks, sendingWindow,startingSeq); 
             machineState = READ_BUFFER;
           }
-		  //if packet is acceptable ACK then we store it in accepte buffer
+		  //if packet is acceptable ACK then we store it in accepted buffer
 		  else if(acceptableACK(packet,acceptableAcks)){
             printf("Recieved acceptable ACK, seq: %d\n",packet.head.seq);
             pop(sendPackets,packet.head.seq); //pop from sendpackets to stop resending
 			pop(recvPackets,packet.head.seq); //pop from recvPackets
 			isInBuffPacket = findPacket(acceptedPackets,packet.head.seq, -1);
-			if(isInBuffPacket.head.seq = -1){
+			if(isInBuffPacket.head.seq = INVALID_SEQ){
 				push(acceptedPackets, packet); //push to acceptedPackets for when client looks if expected packts is there
 			}
 			else{
-				printf("ACK already in accepted buffer\n");
+				printf("ACK already in accepted buffer\n"); //Dont want to add same packets to buffer
 			}
             machineState = CHECK_WINDOW_SIZE;
           }
@@ -346,8 +308,9 @@ int main(int argc, char *argv[]) {
 		  else if(validNACK(packet,acceptableAcks,expectedAck)){
             printf("Recieved acceptable NACK, seq: %d\n",packet.head.seq);
 			tempPacketSeq = packet.head.seq;
+			//check if we have packet that NACK is referencing with its sequence num
             packet = findPacket (sendPackets,packet.head.seq, -1);
-			if(packet.head.seq != -1){			
+			if(packet.head.seq != INVALID_SEQ){			
 				pop(sendPackets, packet.head.seq); //pop to update packet
 				packet.head.timestamp = time(NULL); //update timestamp for resending
 				packet.head.crc = Checksum(packet); //update checksum (hmm maybe dont need to, timestamp not used in Checksum
@@ -356,6 +319,8 @@ int main(int argc, char *argv[]) {
 				writeMessage (sock,packet,serverName); //resend packet
 				pop(recvPackets, packet.head.seq); //pop NACK
 			}
+			//if we dont have packet, we cant respond, pop the NACK
+			//The packet has most likely been popped from recieving ACK
 			pop(recvPackets,tempPacketSeq);
 			machineState = CHECK_WINDOW_SIZE;
           }else{
@@ -385,53 +350,63 @@ int main(int argc, char *argv[]) {
       switch (machineState){
 
         case INIT:
+			//start by preparing a FIN packet to send to server
 			printf("init disconnect\n");
 			packet = prepareFIN(sendingSeq);
 			machineState = SET_CHECKSUM;
           break;
 
         case SET_CHECKSUM:
+			/*When sending FIN to let server
+			 * know we want to disconnect we store
+			 * packet in sendbuffer incase of resend
+			 * but when sending FIN_ACK, there is no
+			 * expectation of resending*/
 			packet.head.crc = Checksum(packet);
 			writeMessage(sock,packet,serverName);
 			if(packet.head.flags == FIN_ACK){
 				printf("FIN_ACK sent\n");
-				timer = time(NULL);
+				timer = time(NULL); //Start timer for WAIT-state
 				machineState = WAIT;
 			}
 			else{
 				printf("FIN sent\n");
-				push(sendPackets, packet);
+				push(sendPackets, packet); //store FIN incase of resend
 				machineState = WAIT_FIN_ACK;
 			}
           break;
 
         case WAIT_FIN_ACK:
-			resendTimeouts(sendPackets,sock,serverName);
+			resendTimeouts(sendPackets,sock,serverName); //resend any packets with timeouts
+			//Look for FIN_ACKS in buffer
 			packet = findPacket(recvPackets,-1,FIN_ACK);
 			if(recievedFIN_ACK(packet)){
 				printf("FIN_ACK recieved\n");
-				pop(recvPackets,packet.head.seq);
-				pop(sendPackets,packet.head.seq);
+				pop(recvPackets,packet.head.seq); //can pop FIN_ACK when we processed it
+				pop(sendPackets,packet.head.seq); //can pop FIN since we dont need to resend it now(we got its ACK)
 				machineState = WAIT_FIN;
 			}
           break;
 
         case WAIT_FIN:
+			//Look for FIN packet in buffer to process
 			packet = findPacket(recvPackets, -1, FIN);
 			if(recievedFIN(packet)){
 				printf("FIN recieved\n");
-				packet = prepareFIN_ACK(packet.head.seq);
+				packet = prepareFIN_ACK(packet.head.seq); // respond with FIN_ACK
 				machineState = SET_CHECKSUM;
 			}
           break;
 		  
         case WAIT:
+			//timer to let server close down safely as in TCP
 			if(time(NULL)-timer >= TIMEOUT){
 				machineState = CLOSED;
 			}
           break;
 		  
         case CLOSED:
+			//Teardown complete, exiting
 			printf("Closing socket\n");
 			close(sock);
 			exit(EXIT_SUCCESS);

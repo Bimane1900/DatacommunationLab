@@ -1,3 +1,13 @@
+/*
+ * Simon Roysson and Mareks Ozols
+ * 
+ * functions.c - definition of all the functions used
+	in the program. This file is included in both
+	server.c and client.c through header.h file
+ * 
+ * 
+
+
 #include "header.h"
 
 /*
@@ -11,8 +21,6 @@ char * serialize_UDP(rtp udp){
   memcpy((buffer2+sizeof(struct header)),(udp.data), udp.head.length2); //the data
 
   return buffer2;
-  //free(buffer2);
-
 }
 
 /*
@@ -25,9 +33,8 @@ rtp deserialize_UDP(char* buffer){
 
   memcpy(&(udp.head), buffer, sizeof(struct header)); //the header
   memcpy((udp.data), (buffer+sizeof(struct header)), udp.head.length2); //the data
-                                                                    //
+                                                                    
   return udp;
-  //free(udp.data);
 }
 
 /* initSocketAddress
@@ -59,17 +66,15 @@ void writeMessage(int fileDescriptor, rtp packet, struct sockaddr_in receiver) {
 
   //size we want to send, the header + lenght of data field.
   int size = (sizeof(struct header)) + packet.head.length2;
-  /*int randomCorrupt = rand()%100;
-  if(randomCorrupt < 30){
+  int randomCorrupt = rand()%100;
+  if(randomCorrupt < FAIL_THRESHOLD){
 	  packet.head.crc = 2;
-  }*/
-  //packet.head.crc = 2;
+  }
 
   //serialize the packet to be able to pass it to sendto as buffer
   buffer = serialize_UDP (packet);
   nOfBytes = sendto(fileDescriptor, buffer, size,0,(struct sockaddr*) &receiver, sizeof(struct sockaddr));
   free(buffer);
-  //free(testPkt.data);
   if(nOfBytes < 0) {
     perror("writeMessage - Could not write data\n");
     exit(EXIT_FAILURE);
@@ -77,7 +82,7 @@ void writeMessage(int fileDescriptor, rtp packet, struct sockaddr_in receiver) {
 }
 
 /* readMessageFrom
- * Reads and prints data read from the file (socket
+ * Reads and returns data read from the file through packet pointer(socket
  * denoted by the file descriptor 'fileDescriptor'.
  */
 int readMessageFrom(int fileDescriptor, rtp* packet, struct sockaddr_in6* address) {
@@ -98,18 +103,8 @@ int readMessageFrom(int fileDescriptor, rtp* packet, struct sockaddr_in6* addres
       return(-1);
     else{
       /* Data read */
-      //test packet
-      rtp testPkt;
-      //deserialize to put the data from buffer to struct
-	  //printf("in function.c address? %s\n",sender.sin6_addr.s6_addr);
       *packet = deserialize_UDP (buffer);
 	  *address = sender;
-      /*printf("data: %s\n",packet->data);
-      printf("crc: %d\n",packet->head.crc);
-      printf("windowsize: %d\n",packet->head.windowsize);
-      printf("flags: %d\n",packet->head.flags);
-      printf("seq: %d\n",packet->head.seq);
-      printf("id: %d\n\n",packet->head.id);*/
       free(buffer);
       return 1;
     }
@@ -148,6 +143,9 @@ int makeSocket(unsigned short int port) {
   return(sock);
 }
 
+
+/*returns a number to be used as checksum for packet.
+ * is calculated by adding all ascii values*/
 int Checksum (rtp packet)
 {
   int i = 0;
@@ -155,10 +153,10 @@ int Checksum (rtp packet)
 
   checksum = packet.head.flags + packet.head.id + packet.head.seq + packet.head.windowsize + packet.head.length2;
 
-  for(i = 0;/*packet.data[i] != '\0'||*/ i < packet.head.length2;i++)
-    {
+  for(i = 0; i < packet.head.length2;i++)
+  {
     checksum += packet.data[i];
-    }
+  }
   return checksum;
 }
 
@@ -250,6 +248,7 @@ rtp prepareFIN(int sendingSeq){
   return FINpkt;
 }
 
+/*prepares a FIN_ACK packet*/
 rtp prepareFIN_ACK(int sendingSeq){
   rtp FINACK;
   FINACK.data = calloc(messageLength,1);
@@ -497,18 +496,16 @@ void resendTimeouts(rtp buff[BUFFSIZE],int sock, struct sockaddr_in serverName){
  * expected - what sequence number we expect to slide window
  * windowsize - windowsize to compare to*/
 int windowIsFull(int sendSeq, int expected, int windowsize){
-printf("sendSeq: %d, expected %d, windowsize %d\n", sendSeq, expected,windowsize);
+  printf("sendSeq: %d, expected %d, windowsize %d\n", sendSeq, expected,windowsize);
   int diff;
   if(sendSeq >= expected){
     diff = sendSeq - expected;
-  //  printf("diff: %d\n",diff);
     if(diff >= (windowsize))
       return 1;
     else return 0;
   }
   else{
     diff = expected - sendSeq;
-    //printf("diff: %d\n",diff);
     if(diff <= (windowsize))
       return 1;
     else return 0;
