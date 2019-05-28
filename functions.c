@@ -59,6 +59,11 @@ void writeMessage(int fileDescriptor, rtp packet, struct sockaddr_in receiver) {
 
   //size we want to send, the header + lenght of data field.
   int size = (sizeof(struct header)) + packet.head.length2;
+  /*int randomCorrupt = rand()%100;
+  if(randomCorrupt < 30){
+	  packet.head.crc = 2;
+  }*/
+  //packet.head.crc = 2;
 
   //serialize the packet to be able to pass it to sendto as buffer
   buffer = serialize_UDP (packet);
@@ -323,8 +328,8 @@ int expectedACK(rtp packet, int expectedAck){
 
 /*Checks if packet is an acceptable packet to recieve
  * by comparing it will list of accepting sequence num*/
-int acceptablePKT(rtp packet, int acceptList[(ServWinSize/2)-1]){
-  for(int i = 0; i < (ServWinSize/2)-1 ; i++){
+int acceptablePKT(rtp packet, int acceptList[(ServWinSize)-1]){
+  for(int i = 0; i < (ServWinSize)-1 ; i++){
     if(packet.head.seq == acceptList[i]){
       return 1;
     }
@@ -334,8 +339,8 @@ int acceptablePKT(rtp packet, int acceptList[(ServWinSize/2)-1]){
 
 /*Check if packet has acceptable sequence number
  * and if it has flags ACK*/
-int acceptableACK(rtp packet, int acceptList[(ServWinSize/2)-1]){
-  for(int i = 0; i < (ServWinSize/2)-1 ; i++){
+int acceptableACK(rtp packet, int acceptList[(ServWinSize)-1]){
+  for(int i = 0; i < (ServWinSize)-1 ; i++){
     if(packet.head.seq == acceptList[i] && packet.head.flags == ACK){
       return 1;
     }
@@ -345,11 +350,11 @@ int acceptableACK(rtp packet, int acceptList[(ServWinSize/2)-1]){
 
 /*Check if packet is a valid NACK, will be if sequence number
  * is acceptable or expected*/
-int validNACK(rtp packet, int acceptList[(ServWinSize/2)-1], int expected){
+int validNACK(rtp packet, int acceptList[(ServWinSize)-1], int expected){
 	if(packet.head.seq == expected && packet.head.flags == NACK){
 		return 1;
 	}
-  for(int i = 0; i < (ServWinSize/2)-1 ; i++){
+  for(int i = 0; i < (ServWinSize)-1 ; i++){
     if(packet.head.seq == acceptList[i] && packet.head.flags == NACK){
       return 1;
     }
@@ -447,7 +452,7 @@ void printBuff(rtp buff[BUFFSIZE]){
  * if reached a limit*/
 void updateSendSeq(int* sendSeq,int winsize, int startSeq){
   (*sendSeq)++;
-  if((*sendSeq) == winsize + startSeq){
+  if((*sendSeq) == winsize*2 + startSeq){
     (*sendSeq) = startSeq;
   }
 }
@@ -458,7 +463,7 @@ void updateSendSeq(int* sendSeq,int winsize, int startSeq){
 void updateAcceptablePKTs(int acceptablePkts[], int size, int slideWin, int startSeq){
   for(int i = 0; i < size ; i++){
     acceptablePkts[i]++;
-    if(acceptablePkts[i] == slideWin + startSeq)
+    if(acceptablePkts[i] == slideWin*2 + startSeq)
       acceptablePkts[i] = startSeq;
   }
 }
@@ -471,16 +476,16 @@ void updateAcceptablePKTs(int acceptablePkts[], int size, int slideWin, int star
  * startSeq - first sequence number used*/
 void slideWindow(int *expectedPKT, int acceptList[],int slideWin, int startSeq){
   (*expectedPKT)++;
-  if((*expectedPKT) == slideWin + startSeq)
+  if((*expectedPKT) == slideWin*2 + startSeq)
     (*expectedPKT) = startSeq;
-  updateAcceptablePKTs(acceptList,(slideWin/2)-1, slideWin, startSeq);
+  updateAcceptablePKTs(acceptList,(slideWin)-1, slideWin, startSeq);
 }
 
 /*Resends any packets in buff where timeout is triggered*/
 void resendTimeouts(rtp buff[BUFFSIZE],int sock, struct sockaddr_in serverName){
   for(int i = 0; i < BUFFSIZE; i++){
-    if(time(NULL) -  buff[i].head.timestamp > 30 && buff[i].head.seq != -1){
-      printf("Resending %s\n",buff[i].data);
+    if(time(NULL) -  buff[i].head.timestamp > TIMEOUT && buff[i].head.seq != -1){
+      printf("Resending %s, seq: %d\n",buff[i].data,buff[i].head.seq);
       writeMessage (sock, buff[i], serverName);
       buff[i].head.timestamp = time(NULL);
     }
@@ -492,19 +497,19 @@ void resendTimeouts(rtp buff[BUFFSIZE],int sock, struct sockaddr_in serverName){
  * expected - what sequence number we expect to slide window
  * windowsize - windowsize to compare to*/
 int windowIsFull(int sendSeq, int expected, int windowsize){
-//printf("sendSeq: %d, expected %d, windowsize %d\n", sendSeq, expected,windowsize);
+printf("sendSeq: %d, expected %d, windowsize %d\n", sendSeq, expected,windowsize);
   int diff;
   if(sendSeq >= expected){
     diff = sendSeq - expected;
   //  printf("diff: %d\n",diff);
-    if(diff >= (windowsize/2))
+    if(diff >= (windowsize))
       return 1;
     else return 0;
   }
   else{
     diff = expected - sendSeq;
     //printf("diff: %d\n",diff);
-    if(diff <= (windowsize/2))
+    if(diff <= (windowsize))
       return 1;
     else return 0;
   }

@@ -16,7 +16,7 @@
 #define hostNameLength 50
 #define messageLength  256
 #define MAXMSG 512
-#define BUFFSIZE 5
+#define BUFFSIZE 10
 
 #define SYN 1
 #define SYN_ACK 2
@@ -48,8 +48,10 @@
 #define WAIT_PKT 16
 
 #define ClientWinSize 8
-#define ServWinSize 6
+#define ServWinSize 4
 #define INVALID_SEQ -1
+#define TIMEOUT 5
+
 
 typedef struct threadArgument{
   int fileDescriptor;

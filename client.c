@@ -57,6 +57,7 @@ void* readServerMessage (void* socket){
 		//Check if packet with that sequence already exists, push only if not
         if(temp.head.seq == -1){
         //if buffer is not full, push it to recieverbuffer so state machine can read it
+			//printf("\n recieved packet with seq %d\n", packet.head.seq);
           if(!push(recvPackets,packet)){
             printf("Buffer full, packet thrown away\n");
           }
@@ -65,7 +66,7 @@ void* readServerMessage (void* socket){
           printf("packet with seqNum %d already in buffer\n",packet.head.seq);
         }
       }else{
-        printf("Checksum corrupt\n");
+        printf("Checksum corrupt seq : %d\n",packet.head.seq);
       }
     }
   }
@@ -83,18 +84,21 @@ int main(int argc, char *argv[]) {
   int test2;
   int senderState = CONN_SETUP;
   int machineState = INIT;
-  rtp send_buffer;
-  argument input;
+  //argument input;
   int expectedAck; //expected ack sequence number, set when first packet is sent
-  int acceptableAcks[ClientWinSize/2+1]; //keeps sequence number for acceptable acks/nacks
-  acceptableAcks[0] = 11;
-  acceptableAcks[1] = 12;
+  int acceptableAcks[ClientWinSize-1]; //keeps sequence number for acceptable acks/nacks
+  //acceptableAcks[0] = 11;
+  //acceptableAcks[1] = 12;
   int sendingSeq = 10; // current sending sequence number
   int startingSeq = 10; //save starting sequence 
   int sendingWindow = ClientWinSize; //clients requested winsize
+  int tempPacketSeq;
+  rtp isInBuffPacket;
   
-  int randomDrop = 0;
-  int randomcorrupt = 0;
+  const char *testSending[] = {"a","b","c","d","e","f"};
+  int sendIndex = 0;
+  int sendTestSize = 6;
+
 
   //initiate the buffers to get correct comparisions
   initBuffer(recvPackets);
@@ -113,17 +117,17 @@ int main(int argc, char *argv[]) {
   /* Initialize the socket address */
   initSocketAddress(&serverName, hostName, PORT);
 
-
-    input.fileDescriptor = sock;
-    input.server = serverName;
-
+	srand(time(NULL));
+    //input.fileDescriptor = sock;
+    //input.server = serverName;
+	int print = 12;
 
     /*Create thread that will check incoming messages from server and print them on screen*/
     test1 = pthread_create(&readFromServer, NULL,readServerMessage, (void*) &sock);
     if(test1 != 0)
       printf("%d : %s\n",errno,strerror(errno));
     /*Create thread that will wait for input from user and will send it further to server*/
-    test2 = pthread_create(&writeToServer,NULL,readInput,(void*)&input);
+    test2 = pthread_create(&writeToServer,NULL,readInput,NULL/*(void*)&input*/);
     if(test2 != 0)
       printf("%d : %s\n", errno,strerror(errno));
 	  
@@ -151,7 +155,7 @@ int main(int argc, char *argv[]) {
             printf("send SYN, seq: %d\n",packet.head.seq);
             expectedAck = packet.head.seq; //Update expected to be same seq number
             push(sendPackets,packet); //push packet to sendBuffer incase we need to resend
-            timer = time(NULL); //set timer
+            //timer = time(NULL); //set timer
             machineState = WAIT_SYN_ACK;
           }
           /*If current packet is a SYN_ACK, we dont
@@ -160,10 +164,10 @@ int main(int argc, char *argv[]) {
           if(packet.head.flags == SYN_ACK){
             packet.head.crc = Checksum(packet);
             writeMessage (sock, packet, serverName);
-            pop(recvPackets,packet.head.seq);
+            //pop(recvPackets,packet.head.seq);
             printf("send SYN_ACK, seq: %d\n",packet.head.seq);
             machineState = EST_CONN;
-            printf("EST_CONN!\n");
+			timer = time(NULL);
           }
           break;
 
@@ -177,26 +181,46 @@ int main(int argc, char *argv[]) {
              printf("recieved SYN_ACK, seq: %d\n",packet.head.seq);
              pop(sendPackets,expectedAck); //Can pop the resend packet now because we recieved ack
              pop(recvPackets,packet.head.seq); //pop the ACK
-             slideWindow (&expectedAck,acceptableAcks,sendingWindow,startingSeq); //update because we expected next sequence number
-             machineState = WAIT_SYN;
+             //slideWindow (&expectedAck,acceptableAcks,sendingWindow,startingSeq); //update because we expected next sequence number
+			 sendingWindow = packet.head.windowsize;
+			 for(int i = 0; i < sendingWindow-1; i++){
+				 acceptableAcks[i]= expectedAck+i+1;
+			 }
+             packet = prepareSYN_ACK (packet.head.seq);
+             machineState = SET_CHECKSUM;
+             //machineState = WAIT_SYN;
           }
           break;
 
-        case WAIT_SYN:
+        /*case WAIT_SYN:
           /*use findPacket to try get packets with
            * SYN flags on them*/
-          packet = findPacket (recvPackets,-1,SYN);
+          /*packet = findPacket (recvPackets,-1,SYN);
           if(recievedSYN(packet)){
             printf("recieved SYN, seq: %d\n",packet.head.seq);
             sendingWindow = packet.head.windowsize;
             packet = prepareSYN_ACK (packet.head.seq);
             machineState = SET_CHECKSUM;
           }
-          break;
+          break;*/
         case EST_CONN:
-          senderState = SLIDING_WINDOW;
-          machineState = WINDOW_NOT_FULL;
-          updateSendSeq(&sendingSeq,sendingWindow,startingSeq);
+		  //if(time(NULL)-timer > TIMEOUT+3){
+            
+            
+            //updateSendSeq(&sendingSeq,sendingWindow,startingSeq);
+		  /*}
+		  packet = findPacket(recvPackets,-1,SYN);
+		  if(recievedSYN(packet)){
+			  machineState = WAIT_SYN;
+		  }*/
+          //
+		  if(time(NULL)-timer > TIMEOUT){
+			  printf("EST_CONN!\n");
+			  printf("expected: %d  senderSeq: %d\n",expectedAck, sendingSeq);
+			  printf("\n");
+			senderState = SLIDING_WINDOW;
+            machineState = WINDOW_NOT_FULL;
+		  }
           break;
 
         default:
@@ -209,15 +233,36 @@ int main(int argc, char *argv[]) {
 
         case WINDOW_NOT_FULL:
           resendTimeouts(sendPackets, sock, serverName); //Check for timeouts
-          packet = findNewPKT(recvPackets);
+          //packet = findNewPKT(recvPackets);
+		  if(sendIndex < sendTestSize){
+			  //printf("sendIndex %d, sendTestSize %d \n", sendIndex, sendTestSize);
+			  packet = preparePKT(testSending[sendIndex], sendingSeq); //prepare packet with msgToSend as data
+			  strncpy(msgToSend,"",messageLength);
+			  machineState = SET_CHECKSUM;
+			  sendIndex++;
+			  break;
+		  }
+		  packet = findPacket(recvPackets,expectedAck, -1);
+		  /*if(print>0){
+			  printf("SEQ: %d\n",packet.head.seq);
+			  print--;
+		  }*/
+		  if(expectedACK(packet, expectedAck)){
+			printf("\n");
+            printf("Recieved expected packet, seq: %d\n",packet.head.seq);
+            machineState = READ_SEQ_NUMBER;
+			break;
+		  }
+		  packet = findNewPKT(recvPackets);
 		  //If recieved packet, check sequence number
           if(receivedPKT (packet)){
-			  printf("\n");
+			printf("\n");
             printf("Recieved packet, seq: %d\n",packet.head.seq);
             machineState = READ_SEQ_NUMBER;
+			break;
           }
 		  //If msgToSend is updated, will send data if it is
-		  else if(strcmp(msgToSend,"")!= 0){
+		  if(strcmp(msgToSend,"")!= 0){
 			  if(strcmp(msgToSend,"disconnect") == 0){
 				  machineState =INIT;
 				  senderState = CONN_TEARDOWN;
@@ -233,6 +278,17 @@ int main(int argc, char *argv[]) {
 		  
         case WINDOW_FULL:
           resendTimeouts(sendPackets, sock, serverName); //Check for timeouts
+		  packet = findPacket(recvPackets,expectedAck, -1);
+		  /*if(print>0){
+			  printf("SEQ: %d\n",packet.head.seq);
+			  print--;
+		  }*/
+		  if(expectedACK(packet, expectedAck)){
+			printf("\n");
+            printf("Recieved expected packet, seq: %d\n",packet.head.seq);
+            machineState = READ_SEQ_NUMBER;
+			break;
+		  }
           packet = findNewPKT(recvPackets);
 		  //If recieved packet, check sequence number
           if(receivedPKT (packet)){
@@ -243,15 +299,8 @@ int main(int argc, char *argv[]) {
 		  
         case SET_CHECKSUM:
           packet.head.crc = Checksum(packet);
-          randomcorrupt = rand()%100; //Random corrupt packet by manipulating crc (fixed seed for rand)
-          if(randomcorrupt > 50){
-            packet.head.crc = 2;
-            writeMessage (sock, packet, serverName); //send corrupted packet
-            packet.head.crc = Checksum(packet); //next resend will be good packet
-          }else{
-            writeMessage (sock, packet, serverName); //send good packet
-          }
           printf("Sent packet, seq: %d\n",packet.head.seq);
+		  writeMessage (sock, packet, serverName); //send packet
           updateSendSeq(&sendingSeq,sendingWindow, startingSeq); //update out next sending sequence number
           push(sendPackets, packet); //push packet to sendPackets for timeouts and resending
           machineState = CHECK_WINDOW_SIZE;
@@ -266,6 +315,7 @@ int main(int argc, char *argv[]) {
             printf("Window is not full\n");
             machineState = WINDOW_NOT_FULL;
           }
+		  printf("\n");
           break;
 		  
         case READ_SEQ_NUMBER:
@@ -283,12 +333,19 @@ int main(int argc, char *argv[]) {
             printf("Recieved acceptable ACK, seq: %d\n",packet.head.seq);
             pop(sendPackets,packet.head.seq); //pop from sendpackets to stop resending
 			pop(recvPackets,packet.head.seq); //pop from recvPackets
-			push(acceptedPackets, packet); //push to acceptedPackets for when client looks if expected packts is there
+			isInBuffPacket = findPacket(acceptedPackets,packet.head.seq, -1);
+			if(isInBuffPacket.head.seq = -1){
+				push(acceptedPackets, packet); //push to acceptedPackets for when client looks if expected packts is there
+			}
+			else{
+				printf("ACK already in accepted buffer\n");
+			}
             machineState = CHECK_WINDOW_SIZE;
           }
 		  //if packet is valid NACK, then try to resend packet which NACK references
 		  else if(validNACK(packet,acceptableAcks,expectedAck)){
             printf("Recieved acceptable NACK, seq: %d\n",packet.head.seq);
+			tempPacketSeq = packet.head.seq;
             packet = findPacket (sendPackets,packet.head.seq, -1);
 			if(packet.head.seq != -1){			
 				pop(sendPackets, packet.head.seq); //pop to update packet
@@ -299,6 +356,7 @@ int main(int argc, char *argv[]) {
 				writeMessage (sock,packet,serverName); //resend packet
 				pop(recvPackets, packet.head.seq); //pop NACK
 			}
+			pop(recvPackets,tempPacketSeq);
 			machineState = CHECK_WINDOW_SIZE;
           }else{
 			//unaccpetable packet, pop it !
@@ -353,6 +411,7 @@ int main(int argc, char *argv[]) {
 			if(recievedFIN_ACK(packet)){
 				printf("FIN_ACK recieved\n");
 				pop(recvPackets,packet.head.seq);
+				pop(sendPackets,packet.head.seq);
 				machineState = WAIT_FIN;
 			}
           break;
@@ -367,7 +426,7 @@ int main(int argc, char *argv[]) {
           break;
 		  
         case WAIT:
-			if(time(NULL)-timer >= 10){
+			if(time(NULL)-timer >= TIMEOUT){
 				machineState = CLOSED;
 			}
           break;
