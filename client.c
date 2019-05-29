@@ -6,6 +6,7 @@
  * precoded array and userInput. Type client in terminal 
  * to connect to running server on same machine (loopback)
  */
+ 
 #include "header.h"
 
 
@@ -393,6 +394,7 @@ int main(int argc, char *argv[]) {
 			packet = findPacket(recvPackets, -1, FIN);
 			if(recievedFIN(packet)){
 				printf("FIN recieved\n");
+				pop(recvPackets,packet.head.seq);
 				packet = prepareFIN_ACK(packet.head.seq); // respond with FIN_ACK
 				machineState = SET_CHECKSUM;
 			}

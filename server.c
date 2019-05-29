@@ -258,6 +258,7 @@ int main(int argc, char *argv[]) {
 		  //will prepare FIN_ACK
 		  if(recievedFIN(packet)){
 			  printf("WAIT_FIN: recieved FIN\n");
+			  pop(recvPackets,packet.head.seq);
 			  packet = prepareFIN_ACK(packet.head.seq);
 			  subState = SET_CHECKSUM;
 		  }else{
@@ -267,10 +268,10 @@ int main(int argc, char *argv[]) {
           break;
 
         case SET_CHECKSUM:
-			//Sending FIN_ACK and the FIN
+			//Sending FIN_ACK and FIN
 			packet.head.crc = Checksum(packet);
 			writeMessage(sock,packet,clientName);
-			pop(recvPackets,packet.head.seq);//Can recieved FIN
+			//pop(recvPackets,packet.head.seq);//Can pop recieved FIN
 			printf("Send FIN_ACK\n");
 			packet = prepareFIN(0);
 			packet.head.crc = Checksum(packet);
@@ -281,6 +282,7 @@ int main(int argc, char *argv[]) {
           break;
 
         case WAIT_FIN_ACK:
+			resendTimeouts(sendPackets,sock,clientName);//resend FIN if timeout
 			//Wait until we receive FIN_ACK and then closes
 			packet = findPacket(recvPackets,-1,FIN_ACK);
 			if(recievedFIN_ACK(packet)){
@@ -288,8 +290,16 @@ int main(int argc, char *argv[]) {
 				pop(sendPackets,packet.head.seq);//pop FIN_ACK
 				subState = CLOSED;
 				printf("Closed!\n");
+				break;
 			}
-			resendTimeouts(sendPackets,sock,clientName);//resend FIN if timeout
+			packet = findPacket(recvPackets,-1,FIN);
+			if(recievedFIN(packet)){ 
+				//client still resending FIN, the sent FIN_ACK  lost
+				//pop resending FIN and redo from WAIT_FIN
+				printf("Recieved FIN\n");
+				subState = WAIT_FIN;
+				pop(sendPackets,0);
+			}
           break;
 
         case CLOSED:

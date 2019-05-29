@@ -4,9 +4,9 @@
  * functions.c - definition of all the functions used
 	in the program. This file is included in both
 	server.c and client.c through header.h file
+ * *
  * 
- * 
-
+*/
 
 #include "header.h"
 
@@ -428,7 +428,10 @@ rtp findNewPKT(rtp buff[BUFFSIZE]){
 
 /*removes packet from buffer by
  * setting its seq to -1, making
- * it invalid*/
+ * it invalid.
+ * Note: not to be confused with
+ *  standard pop which returns
+ *  element.*/
 void pop(rtp buff[BUFFSIZE], int seq){
   for (int i =0 ; i < BUFFSIZE; i++)
     {
